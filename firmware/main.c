@@ -15,6 +15,8 @@ typedef struct {
 
 static time t = {1, 1, 1, 24, 5, 1983};
 
+static volatile uint8_t power_save = 1;
+
 static void timer_init() {
     // ensure power is on for timer/counter2
 //    PRR &= ~(1<<PRTIM2);
@@ -46,6 +48,9 @@ int main() {
     // shut all peripherals off, we will enable as needed
     power_all_disable();
 
+    // run system clock at 1/2 speed.
+//    clock_prescale_set(clock_div_2);
+
     // wait for system / clocks to stabilize
     _delay_ms(500);
     
@@ -55,8 +60,15 @@ int main() {
     DDRB |= 1<<PB0;
     PORTB &= ~(1<<PB0);
 
-    timer_init();
+    DDRC |= (1<<PC5);    
+    DDRC &= ~(1<<PC4);
     
+    power_save = 1;
+    PORTC |= (1<<PC5);
+    PORTB &= ~(1<<PB0);
+    
+    timer_init();
+
     do {
         set_sleep_mode(SLEEP_MODE_PWR_SAVE);
         cli();
@@ -65,7 +77,22 @@ int main() {
         sei();
         sleep_cpu();
         sleep_disable();
+    
+        const uint8_t primary_power = PINC & (1<<PC4);
         
+        if (power_save) {
+            if (primary_power) {
+                power_save = 0;
+            }
+        } else {
+            if (!primary_power) {
+                power_save = 1;
+                
+                // stop outputs
+                PORTD = 0x00;
+                PORTB = 0x00;
+            }
+        }
         // rinse, repeat
     } while(1);
 
@@ -81,8 +108,7 @@ static uint8_t not_leap_year() {
 }
 
 // timer2 overflow
-ISR(TIMER2_OVF_vect)
-{
+ISR(TIMER2_OVF_vect) {
     // time keeping from app note AVR134
     if (++t.second == 60) {
         t.second = 0;
@@ -99,7 +125,7 @@ ISR(TIMER2_OVF_vect)
                 } else if (t.day == 31) {                    
                     if ((t.month == 4) || (t.month == 6) || (t.month == 9) || (t.month == 11)) {
                         t.month++;
-                        t.day=1;
+                        t.day = 1;
                     }
                 } else if (t.day == 30) {
                     if(t.month == 2) {
@@ -120,14 +146,20 @@ ISR(TIMER2_OVF_vect)
             }
         }
     }
-    
-    // tube off
-    PORTB &= ~(1<<PB0);
-    
-    // output digit
-    PORTD = (t.second%10); // & 0x0F;
-    
-    // tube on
-    PORTB |= (1<<PB0);
-}
 
+    if (power_save) {
+        // blink 'backup power' led
+        PORTC ^= (1<<PC5);
+    } else {
+        PORTC &= ~(1<<PC5);
+        
+        // tube off
+        PORTB &= ~(1<<PB0);
+        
+        // output digit
+        PORTD = (t.second%10); // & 0x0F;
+        
+        // tube on
+        PORTB |= (1<<PB0);
+    }
+}
