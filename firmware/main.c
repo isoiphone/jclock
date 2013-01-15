@@ -1,29 +1,21 @@
-#include <util/delay_basic.h>
+#include <util/delay.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/power.h>
 
-static void delay_ms(uint16_t ms){
- 	while (ms > 0) {
-		_delay_loop_2(F_CPU/4000);
-		ms--;
-	}
-}
-
 typedef struct {
     uint8_t second;
     uint8_t minute;
     uint8_t hour;                                     
-    uint8_t date;       
+    uint8_t day;       
     uint8_t month;
     uint16_t year;      
 } time;
 
 static time t = {1, 1, 1, 24, 5, 1983};
 
-static void timer_init()
-{
+static void timer_init() {
     // ensure power is on for timer/counter2
 //    PRR &= ~(1<<PRTIM2);
     power_timer2_enable();
@@ -50,20 +42,19 @@ static void timer_init()
 //    sei();
 }
 
-int main()
-{
+int main() {
     // shut all peripherals off, we will enable as needed
     power_all_disable();
-    
-    // run system clock at 1/2 speed.
-    clock_prescale_set(clock_div_2);
-    
+
     // wait for system / clocks to stabilize
-    delay_ms(1000);
+    _delay_ms(500);
     
-    DDRC |= 1<<PC5;
-    PORTC |= 1<<PC5;
+    DDRD |= 0x0F;
+    PORTD = 0x00;
     
+    DDRB |= 1<<PB0;
+    PORTB &= ~(1<<PB0);
+
     timer_init();
     
     do {
@@ -82,8 +73,7 @@ int main()
 }
 
 // check for leap year
-static uint8_t not_leap()
-{
+static uint8_t not_leap_year() {
     if (!(t.year%100))
         return (uint8_t)(t.year%400);
     else
@@ -93,55 +83,51 @@ static uint8_t not_leap()
 // timer2 overflow
 ISR(TIMER2_OVF_vect)
 {
-    // time keeping from from app note AVR134
-    if (++t.second==60)
-    {
-        t.second=0;
-        if (++t.minute==60) 
-        {
-            t.minute=0;
-            if (++t.hour==24)
-            {
-                t.hour=0;
-                if (++t.date==32)
-                {
+    // time keeping from app note AVR134
+    if (++t.second == 60) {
+        t.second = 0;
+        
+        if (++t.minute == 60) {
+            t.minute = 0;
+            
+            if (++t.hour == 24) {
+                t.hour = 0;
+                
+                if (++t.day == 32) {
                     t.month++;
-                    t.date=1;
-                }
-                else if (t.date==31) 
-                {                    
-                    if ((t.month==4) || (t.month==6) || (t.month==9) || (t.month==11)) 
-                    {
+                    t.day = 1;
+                } else if (t.day == 31) {                    
+                    if ((t.month == 4) || (t.month == 6) || (t.month == 9) || (t.month == 11)) {
                         t.month++;
-                        t.date=1;
+                        t.day=1;
                     }
-                }
-                else if (t.date==30)
-                {
-                    if(t.month==2)
-                    {
+                } else if (t.day == 30) {
+                    if(t.month == 2) {
                         t.month++;
-                        t.date=1;
+                        t.day = 1;
                     }
-                }              
-                else if (t.date==29) 
-                {
-                    if((t.month==2) && (not_leap()))
-                    {
+                } else if (t.day == 29) {
+                    if((t.month == 2) && (not_leap_year())) {
                         t.month++;
-                        t.date=1;
+                        t.day = 1;
                     }                
                 }                          
-                if (t.month==13)
-                {
-                    t.month=1;
+                
+                if (t.month == 13) {
+                    t.month = 1;
                     t.year++;
                 }
             }
         }
     }
     
-    PORTC ^= 1<<PC5;
-}  
-
+    // tube off
+    PORTB &= ~(1<<PB0);
+    
+    // output digit
+    PORTD = (t.second%10); // & 0x0F;
+    
+    // tube on
+    PORTB |= (1<<PB0);
+}
 
