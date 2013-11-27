@@ -4,162 +4,173 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 
-typedef struct {
-    uint8_t second;
-    uint8_t minute;
-    uint8_t hour;                                     
-    uint8_t day;       
-    uint8_t month;
-    uint16_t year;      
-} time;
+void increment_second();
+void increment_minute(uint8_t ripple);
+void increment_hour();
+void timer_init();
+uint8_t read_switch1();
+uint8_t read_switch2();
 
-static time t = {1, 1, 1, 24, 5, 1983};
+volatile struct {
+    uint8_t seconds;
+    unsigned int one_minute : 4;
+    unsigned int ten_minute : 4;
+    unsigned int one_hour : 4;
+    unsigned int ten_hour : 4;
+} data = {0, 7, 3, 3, 1};
 
-static volatile uint8_t power_save = 1;
+int main()
+{
+    // shut all peripherals off, we will enable as needed
+    power_all_disable();
 
-static void timer_init() {
+    // PORTB is wired up to blanking transistors
+    // 0011 1110
+    DDRB |= 0x3E;
+    PORTB &= ~0x3E;
+    
+    // PORTC is wired up to K155 BCD IC
+    // 0000 1111
+    DDRC |= 0x0F;
+    PORTC &= ~0x0F;
+    
+    // PD7 is wired to switch input, with external pulldown
+    // PD2 is wired to power signal
+    DDRD &= ~((1<<PD7)|(1<<PD2));
+    PORTD &= ~((1<<PD7)|(1<<PD2));
+    
+    // wait for system / clocks to stabilize
+    _delay_ms(250);
+    
+    timer_init();
+
+    for (;;) {
+        PORTC = data.ten_hour;
+        PORTB |= (1<<PB1);
+        _delay_ms(1);
+        if (read_switch1()) {
+            data.seconds = 0;
+            increment_hour();
+        }
+        
+        PORTB &= ~(1<<PB1);
+        _delay_ms(1);
+
+        // colon on
+        PORTB |= (1<<PB2);
+        
+        PORTC = data.one_hour;
+        PORTB |= (1<<PB3);
+        _delay_ms(1);
+        
+        if (read_switch2()) {
+            data.seconds = 0;
+            increment_minute(0);
+        }
+        
+        // colon off
+        PORTB &= ~(1<<PB2);
+        
+        PORTB &= ~(1<<PB3);
+        _delay_ms(1);
+        
+        PORTC = data.ten_minute;
+        PORTB |= (1<<PB4);
+        _delay_ms(1);
+        PORTB &= ~(1<<PB4);
+        _delay_ms(1);
+        
+        PORTC = data.one_minute;
+        PORTB |= (1<<PB5);
+        _delay_ms(1);
+        PORTB &= ~(1<<PB5);
+        _delay_ms(1);
+    }
+
+    return 0;
+}
+
+void timer_init()
+{
     // ensure power is on for timer/counter2
-//    PRR &= ~(1<<PRTIM2);
     power_timer2_enable();
-
+    
     // disable overflow interupt
     TIMSK2 &= ~(1<<TOIE2);
-
-    // clock from external async watch 32.768Hz crystal on TOSC1/TOSC2
-    ASSR |= (1<<AS2);
-
+    
+    // clock from external clock, DS32kHz
+    ASSR |= (1<<AS2) | (1<<EXCLK);
+    
     // clear counter
     TCNT2 = 0;
     
     // divide by 128 clock prescaler
     TCCR2B = (1<<CS22)|(1<<CS20);
-
+    
     // wait TCCR2B to update
     while (ASSR & ((1<<TCR2BUB)|(1<<TCN2UB))) {}
     
     // enable overflow interrupt
     TIMSK2 = (1<<TOIE2);
-
-    // we will enable interupts later
-//    sei();
-}
-
-int main() {
-    // shut all peripherals off, we will enable as needed
-    power_all_disable();
-
-    // run system clock at 1/2 speed.
-//    clock_prescale_set(clock_div_2);
-
-    // wait for system / clocks to stabilize
-    _delay_ms(500);
     
-    DDRD |= 0x0F;
-    PORTD = 0x00;
-    
-    DDRB |= 1<<PB0;
-    PORTB &= ~(1<<PB0);
-
-    DDRC |= (1<<PC5);    
-    DDRC &= ~(1<<PC4);
-    
-    power_save = 1;
-    PORTC |= (1<<PC5);
-    PORTB &= ~(1<<PB0);
-    
-    timer_init();
-
-    do {
-        set_sleep_mode(SLEEP_MODE_PWR_SAVE);
-        cli();
-        sleep_enable();
-        sleep_bod_disable();
-        sei();
-        sleep_cpu();
-        sleep_disable();
-    
-        const uint8_t primary_power = PINC & (1<<PC4);
-        
-        if (power_save) {
-            if (primary_power) {
-                power_save = 0;
-            }
-        } else {
-            if (!primary_power) {
-                power_save = 1;
-                
-                // stop outputs
-                PORTD = 0x00;
-                PORTB = 0x00;
-            }
-        }
-        // rinse, repeat
-    } while(1);
-
-    return 0;
-}
-
-// check for leap year
-static uint8_t not_leap_year() {
-    if (!(t.year%100))
-        return (uint8_t)(t.year%400);
-    else
-        return (uint8_t)(t.year%4);
+    // enable interupts
+    sei();
 }
 
 // timer2 overflow
-ISR(TIMER2_OVF_vect) {
-    // time keeping from app note AVR134
-    if (++t.second == 60) {
-        t.second = 0;
+ISR(TIMER2_OVF_vect)
+{
+    increment_second();
+//    increment_minute(1);
+}
+
+void increment_second()
+{
+    if (++data.seconds == 60) {
+        data.seconds = 0;
+        increment_minute(1);
+    }
+}
+
+void increment_minute(uint8_t ripple)
+{
+    if (++data.one_minute == 10) {
+        data.one_minute = 0;
         
-        if (++t.minute == 60) {
-            t.minute = 0;
+        if (++data.ten_minute == 6) {
+            data.ten_minute = 0;
             
-            if (++t.hour == 24) {
-                t.hour = 0;
-                
-                if (++t.day == 32) {
-                    t.month++;
-                    t.day = 1;
-                } else if (t.day == 31) {                    
-                    if ((t.month == 4) || (t.month == 6) || (t.month == 9) || (t.month == 11)) {
-                        t.month++;
-                        t.day = 1;
-                    }
-                } else if (t.day == 30) {
-                    if(t.month == 2) {
-                        t.month++;
-                        t.day = 1;
-                    }
-                } else if (t.day == 29) {
-                    if((t.month == 2) && (not_leap_year())) {
-                        t.month++;
-                        t.day = 1;
-                    }                
-                }                          
-                
-                if (t.month == 13) {
-                    t.month = 1;
-                    t.year++;
-                }
+            if (ripple) {
+                increment_hour();
             }
         }
     }
+}
 
-    if (power_save) {
-        // blink 'backup power' led
-        PORTC ^= (1<<PC5);
-    } else {
-        PORTC &= ~(1<<PC5);
-        
-        // tube off
-        PORTB &= ~(1<<PB0);
-        
-        // output digit
-        PORTD = (t.second%10); // & 0x0F;
-        
-        // tube on
-        PORTB |= (1<<PB0);
+void increment_hour()
+{
+    ++data.one_hour;
+    
+    if (data.one_hour == 10) {
+        data.one_hour = 0;
+        ++data.ten_hour;
+    } else if (data.ten_hour == 2 && data.one_hour == 4) {
+        data.one_hour = 0;
+        data.ten_hour = 0;
     }
 }
+
+uint8_t read_switch1()
+{
+    static uint16_t state = 0;
+    state = (state<<1) | ((PIND&(1<<PD7))==0) | 0xe000;
+    return (state==0xf000);
+}
+
+uint8_t read_switch2()
+{
+    static uint16_t state = 0;
+    state = (state<<1) | ((PIND&(1<<PD7))==0) | 0xe000;
+    return (state==0xf000);
+}
+
