@@ -4,22 +4,26 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 
-void increment_second();
-void increment_minute(uint8_t ripple);
-void increment_hour();
-void toggle_mode();
-void timer_init();
-uint8_t read_switch1();
-uint8_t read_switch2();
-uint8_t read_switch3();
-
-volatile struct {
+typedef struct {
     uint8_t seconds;
     unsigned int one_minute : 4;
     unsigned int ten_minute : 4;
     unsigned int one_hour : 4;
     unsigned int ten_hour : 4;
-} data = {0, 7, 3, 3, 1};
+} display_t;
+
+void increment_second(display_t* display);
+void increment_minute(display_t* display, uint8_t ripple);
+void increment_hour(display_t* display);
+void toggle_display();
+void timer_init();
+uint8_t read_switch1();
+uint8_t read_switch2();
+uint8_t read_switch3();
+
+display_t clock = {0, 7, 3, 3, 1};
+display_t timer = {0, 0, 0, 0, 0};
+display_t* current_display = &clock;
 
 int main()
 {
@@ -45,43 +49,43 @@ int main()
     _delay_ms(250);
     
     timer_init();
-
+    
     for (;;) {
         // 10 hour, PB1
-        PORTC = data.ten_hour;
+        PORTC = current_display->ten_hour;
         PORTB |= (1<<PB1);
         _delay_ms(1);
         if (read_switch1()) {
-            data.seconds = 0;
-            increment_hour();
+            clock.seconds = 0;
+            increment_hour(&clock);
         }
         PORTB &= ~(1<<PB1);
         _delay_ms(1);
 
         // 1 hour, PB3
-        PORTC = data.one_hour;
+        PORTC = current_display->one_hour;
 
         PORTB |= (1<<PB3);
         _delay_ms(1);
         if (read_switch2()) {
-            data.seconds = 0;
-            increment_minute(0);
+            clock.seconds = 0;
+            increment_minute(&clock, 0);
         }
         PORTB &= ~(1<<PB3);
         _delay_ms(1);
         
         // 10 minute, PB4
-        PORTC = data.ten_minute;
+        PORTC = current_display->ten_minute;
         PORTB |= (1<<PB4);
         _delay_ms(1);
         if (read_switch3()) {
-            toggle_mode();
+            toggle_display();
         }
         PORTB &= ~(1<<PB4);
         _delay_ms(1);
         
         // 1 minute, PB5
-        PORTC = data.one_minute;
+        PORTC = current_display->one_minute;
         PORTB |= (1<<PB5);
         _delay_ms(1);
         PORTB &= ~(1<<PB5);
@@ -127,50 +131,60 @@ void timer_init()
 // timer2 overflow
 ISR(TIMER2_OVF_vect)
 {
-    increment_second();
-//    increment_minute(1);
-}
-
-void increment_second()
-{
-    if (++data.seconds == 60) {
-        data.seconds = 0;
-        increment_minute(1);
+    increment_second(&clock);
+    if (current_display == &timer) {
+        increment_minute(&timer, 1);
     }
 }
 
-void increment_minute(uint8_t ripple)
+void increment_second(display_t* display)
 {
-    if (++data.one_minute == 10) {
-        data.one_minute = 0;
+    if (++display->seconds == 60) {
+        display->seconds = 0;
+        increment_minute(display, 1);
+    }
+}
+
+void increment_minute(display_t* display, uint8_t ripple)
+{
+    if (++display->one_minute == 10) {
+        display->one_minute = 0;
         
-        if (++data.ten_minute == 6) {
-            data.ten_minute = 0;
+        if (++display->ten_minute == 6) {
+            display->ten_minute = 0;
             
             if (ripple) {
-                increment_hour();
+                increment_hour(display);
             }
         }
     }
 }
 
-void increment_hour()
+void increment_hour(display_t* display)
 {
-    ++data.one_hour;
+    ++display->one_hour;
     
-    if (data.one_hour == 10) {
-        data.one_hour = 0;
-        ++data.ten_hour;
-    } else if (data.ten_hour == 2 && data.one_hour == 4) {
-        data.one_hour = 0;
-        data.ten_hour = 0;
+    if (display->one_hour == 10) {
+        display->one_hour = 0;
+        ++display->ten_hour;
+    } else if (display->ten_hour == 2 && display->one_hour == 4) {
+        display->one_hour = 0;
+        display->ten_hour = 0;
     }
 }
 
-void toggle_mode()
+void toggle_display()
 {
-    increment_hour();
-    increment_minute(0);
+    if (current_display == &clock) {
+        timer.seconds = 0;
+        timer.one_minute = 0;
+        timer.ten_minute = 0;
+        timer.one_hour = 0;
+        timer.ten_hour = 0;
+        current_display = &timer;
+    } else {
+        current_display = &clock;
+    }
 }
 
 uint8_t read_switch1()
