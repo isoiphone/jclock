@@ -7,9 +7,11 @@
 void increment_second();
 void increment_minute(uint8_t ripple);
 void increment_hour();
+void toggle_mode();
 void timer_init();
 uint8_t read_switch1();
 uint8_t read_switch2();
+uint8_t read_switch3();
 
 volatile struct {
     uint8_t seconds;
@@ -24,7 +26,7 @@ int main()
     // shut all peripherals off, we will enable as needed
     power_all_disable();
 
-    // PORTB is wired up to blanking transistors
+    // PORTB is wired up to blanking transistors, and switch 3
     // 0011 1110
     DDRB |= 0x3E;
     PORTB &= ~0x3E;
@@ -45,6 +47,7 @@ int main()
     timer_init();
 
     for (;;) {
+        // 10 hour, PB1
         PORTC = data.ten_hour;
         PORTB |= (1<<PB1);
         _delay_ms(1);
@@ -52,39 +55,43 @@ int main()
             data.seconds = 0;
             increment_hour();
         }
-        
         PORTB &= ~(1<<PB1);
         _delay_ms(1);
 
-        // colon on
-        PORTB |= (1<<PB2);
-        
+        // 1 hour, PB3
         PORTC = data.one_hour;
+
         PORTB |= (1<<PB3);
         _delay_ms(1);
-        
         if (read_switch2()) {
             data.seconds = 0;
             increment_minute(0);
         }
-        
-        // colon off
-        PORTB &= ~(1<<PB2);
-        
         PORTB &= ~(1<<PB3);
         _delay_ms(1);
         
+        // 10 minute, PB4
         PORTC = data.ten_minute;
         PORTB |= (1<<PB4);
         _delay_ms(1);
+        if (read_switch3()) {
+            toggle_mode();
+        }
         PORTB &= ~(1<<PB4);
         _delay_ms(1);
         
+        // 1 minute, PB5
         PORTC = data.one_minute;
         PORTB |= (1<<PB5);
         _delay_ms(1);
         PORTB &= ~(1<<PB5);
+        PORTB |= (1<<PB0);
+        
+        PORTB |= (1<<PB2); // colon on
+
         _delay_ms(1);
+        
+        PORTB &= ~(1<<PB2); // colon off
     }
 
     return 0;
@@ -160,6 +167,12 @@ void increment_hour()
     }
 }
 
+void toggle_mode()
+{
+    increment_hour();
+    increment_minute(0);
+}
+
 uint8_t read_switch1()
 {
     static uint16_t state = 0;
@@ -174,3 +187,9 @@ uint8_t read_switch2()
     return (state==0xf000);
 }
 
+uint8_t read_switch3()
+{
+    static uint16_t state = 0;
+    state = (state<<1) | ((PIND&(1<<PD7))==0) | 0xe000;
+    return (state==0xf000);
+}
