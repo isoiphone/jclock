@@ -4,6 +4,9 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 
+#define ON_INTERVAL_US  500
+#define OFF_INTERVAL_US 250
+
 typedef struct {
     uint8_t seconds;
     unsigned int one_minute : 4;
@@ -22,7 +25,7 @@ uint8_t read_switch2();
 uint8_t read_switch3();
 
 display_t clock = {0, 7, 3, 3, 1};
-display_t timer = {0, 0, 0, 0, 0};
+display_t timer;
 display_t* current_display = &clock;
 
 int main()
@@ -54,48 +57,45 @@ int main()
         // 10 hour, PB1
         PORTC = current_display->ten_hour;
         PORTB |= (1<<PB1);
-        _delay_ms(1);
+        _delay_us(ON_INTERVAL_US);
         if (read_switch1()) {
             clock.seconds = 0;
             increment_hour(&clock);
         }
         PORTB &= ~(1<<PB1);
-        _delay_ms(1);
+        _delay_us(OFF_INTERVAL_US);
 
         // 1 hour, PB3
         PORTC = current_display->one_hour;
 
         PORTB |= (1<<PB3);
-        _delay_ms(1);
+        _delay_us(ON_INTERVAL_US);
         if (read_switch2()) {
             clock.seconds = 0;
             increment_minute(&clock, 0);
         }
         PORTB &= ~(1<<PB3);
-        _delay_ms(1);
+        _delay_us(OFF_INTERVAL_US);
         
         // 10 minute, PB4
         PORTC = current_display->ten_minute;
         PORTB |= (1<<PB4);
-        _delay_ms(1);
+        PORTB |= (1<<PB2); // colon on
+        _delay_us(ON_INTERVAL_US);
         if (read_switch3()) {
             toggle_display();
         }
         PORTB &= ~(1<<PB4);
-        _delay_ms(1);
+        PORTB &= ~(1<<PB2); // colon off
+        _delay_us(OFF_INTERVAL_US);
         
         // 1 minute, PB5
         PORTC = current_display->one_minute;
         PORTB |= (1<<PB5);
-        _delay_ms(1);
+        _delay_us(ON_INTERVAL_US);
         PORTB &= ~(1<<PB5);
         PORTB |= (1<<PB0);
-        
-        PORTB |= (1<<PB2); // colon on
-
-        _delay_ms(1);
-        
-        PORTB &= ~(1<<PB2); // colon off
+        _delay_us(OFF_INTERVAL_US);
     }
 
     return 0;
@@ -166,8 +166,10 @@ void increment_hour(display_t* display)
     
     if (display->one_hour == 10) {
         display->one_hour = 0;
-        ++display->ten_hour;
-    } else if (display->ten_hour == 2 && display->one_hour == 4) {
+        if (++display->ten_hour == 10) {
+            display->ten_hour = 0;
+        }
+    } else if (display == &clock && (display->ten_hour == 2 && display->one_hour == 4)) {
         display->one_hour = 0;
         display->ten_hour = 0;
     }
