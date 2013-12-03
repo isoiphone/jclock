@@ -54,48 +54,62 @@ int main()
     timer_init();
     
     for (;;) {
-        // 10 hour, PB1
-        PORTC = current_display->ten_hour;
-        PORTB |= (1<<PB1);
-        _delay_us(ON_INTERVAL_US);
-        if (read_switch1()) {
-            clock.seconds = 0;
-            increment_hour(&clock);
-        }
-        PORTB &= ~(1<<PB1);
-        _delay_us(OFF_INTERVAL_US);
+        if (!current_display) {
+            PORTC = 10;
+            PORTB |= (1<<PB4);
+            if (read_switch3()) {
+                toggle_display();
+            }
+            PORTB &= ~(1<<PB4);
+            _delay_ms(10);
+        } else {
+            PORTB |= (1<<PB2); // colon on
 
-        // 1 hour, PB3
-        PORTC = current_display->one_hour;
+            // 10 hour, PB1
+            PORTC = current_display->ten_hour;
+            PORTB |= (1<<PB1);
+            _delay_us(ON_INTERVAL_US);
+            if (read_switch1()) {
+                clock.seconds = 0;
+                increment_hour(&clock);
+            }
+            PORTB &= ~(1<<PB1);
+            
+            _delay_us(OFF_INTERVAL_US);
 
-        PORTB |= (1<<PB3);
-        _delay_us(ON_INTERVAL_US);
-        if (read_switch2()) {
-            clock.seconds = 0;
-            increment_minute(&clock, 0);
+            // 1 hour, PB3
+            PORTC = current_display->one_hour;
+
+            PORTB |= (1<<PB3);
+            _delay_us(ON_INTERVAL_US);
+            if (read_switch2()) {
+                clock.seconds = 0;
+                increment_minute(&clock, 0);
+            }
+            PORTB &= ~(1<<PB3);
+            _delay_us(OFF_INTERVAL_US);
+            
+            // 10 minute, PB4
+            PORTC = current_display->ten_minute;
+            PORTB |= (1<<PB4);
+
+            _delay_us(ON_INTERVAL_US);
+            if (read_switch3()) {
+                toggle_display();
+            }
+            PORTB &= ~(1<<PB4);
+            _delay_us(OFF_INTERVAL_US);
+
+            // 1 minute, PB5
+            PORTC = current_display->one_minute;
+            PORTB |= (1<<PB5);
+            _delay_us(ON_INTERVAL_US);
+            PORTB &= ~(1<<PB5);
+            PORTB |= (1<<PB0);
+            _delay_us(OFF_INTERVAL_US);
+            
+            PORTB &= ~(1<<PB2); // colon off
         }
-        PORTB &= ~(1<<PB3);
-        _delay_us(OFF_INTERVAL_US);
-        
-        // 10 minute, PB4
-        PORTC = current_display->ten_minute;
-        PORTB |= (1<<PB4);
-        PORTB |= (1<<PB2); // colon on
-        _delay_us(ON_INTERVAL_US);
-        if (read_switch3()) {
-            toggle_display();
-        }
-        PORTB &= ~(1<<PB4);
-        PORTB &= ~(1<<PB2); // colon off
-        _delay_us(OFF_INTERVAL_US);
-        
-        // 1 minute, PB5
-        PORTC = current_display->one_minute;
-        PORTB |= (1<<PB5);
-        _delay_us(ON_INTERVAL_US);
-        PORTB &= ~(1<<PB5);
-        PORTB |= (1<<PB0);
-        _delay_us(OFF_INTERVAL_US);
     }
 
     return 0;
@@ -184,11 +198,14 @@ void toggle_display()
         timer.one_hour = 0;
         timer.ten_hour = 0;
         current_display = &timer;
+    } else if (current_display == &timer) {
+        current_display = 0;
     } else {
         current_display = &clock;
     }
 }
 
+// hooked up to PB1
 uint8_t read_switch1()
 {
     static uint16_t state = 0;
@@ -196,6 +213,7 @@ uint8_t read_switch1()
     return (state==0xf000);
 }
 
+// hooked up to PB3
 uint8_t read_switch2()
 {
     static uint16_t state = 0;
@@ -203,6 +221,7 @@ uint8_t read_switch2()
     return (state==0xf000);
 }
 
+// hooked up to PB4
 uint8_t read_switch3()
 {
     static uint16_t state = 0;
