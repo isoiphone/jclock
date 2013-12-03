@@ -20,6 +20,7 @@ void increment_minute(display_t* display, uint8_t ripple);
 void increment_hour(display_t* display);
 void toggle_display();
 void timer_init();
+void colon_init();
 uint8_t read_switch1();
 uint8_t read_switch2();
 uint8_t read_switch3();
@@ -53,6 +54,8 @@ int main()
     
     timer_init();
     
+    colon_init();
+
     for (;;) {
         if (!current_display) {
             PORTC = 10;
@@ -63,8 +66,6 @@ int main()
             PORTB &= ~(1<<PB4);
             _delay_ms(10);
         } else {
-            PORTB |= (1<<PB2); // colon on
-
             // 10 hour, PB1
             PORTC = current_display->ten_hour;
             PORTB |= (1<<PB1);
@@ -107,8 +108,6 @@ int main()
             PORTB &= ~(1<<PB5);
             PORTB |= (1<<PB0);
             _delay_us(OFF_INTERVAL_US);
-            
-            PORTB &= ~(1<<PB2); // colon off
         }
     }
 
@@ -140,6 +139,21 @@ void timer_init()
     
     // enable interupts
     sei();
+}
+
+void colon_init()
+{
+    // colon blanking is on PB2/OC1B
+    power_timer1_enable();
+    
+    // set at bottom, clear on match
+    TCCR1A = (1<<COM1B1) | (1<<WGM10);
+    
+    // fast 8bit pwm, clock from cpu no prescaler
+    TCCR1B = (1<<WGM12) | (1<<CS10);
+
+    // trial and error to determined this is as dim as we can go without flickering
+    OCR1B = 90;
 }
 
 // timer2 overflow
