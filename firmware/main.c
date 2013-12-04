@@ -4,8 +4,9 @@
 #include <avr/sleep.h>
 #include <avr/power.h>
 
-#define ON_INTERVAL_US  500
-#define OFF_INTERVAL_US 250
+#define ON_INTERVAL_US  600
+#define OFF_INTERVAL_US 300
+#define COLON_PWM 185
 
 typedef struct {
     uint8_t seconds;
@@ -149,11 +150,11 @@ void colon_init()
     // set at bottom, clear on match
     TCCR1A = (1<<COM1B1) | (1<<WGM10);
     
-    // fast 8bit pwm, clock from cpu no prescaler
-    TCCR1B = (1<<WGM12) | (1<<CS10);
+    // fast 8bit pwm, clock from cpu div 8 prescaler
+    TCCR1B = (1<<WGM12) | (1<<CS11);
 
     // trial and error to determined this is as dim as we can go without flickering
-    OCR1B = 90;
+    OCR1B = COLON_PWM;
 }
 
 // timer2 overflow
@@ -214,8 +215,10 @@ void toggle_display()
         current_display = &timer;
     } else if (current_display == &timer) {
         current_display = 0;
+        OCR1B = 0;
     } else {
         current_display = &clock;
+        OCR1B = COLON_PWM;
     }
 }
 
