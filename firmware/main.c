@@ -6,7 +6,7 @@
 
 #define ON_INTERVAL_US  600
 #define OFF_INTERVAL_US 300
-#define COLON_PWM 185
+#define COLON_PWM 30
 
 typedef struct {
     uint8_t seconds;
@@ -150,8 +150,8 @@ void colon_init()
     // set at bottom, clear on match
     TCCR1A = (1<<COM1B1) | (1<<WGM10);
     
-    // fast 8bit pwm, clock from cpu div 8 prescaler
-    TCCR1B = (1<<WGM12) | (1<<CS11);
+    // fast 8bit pwm, clock from cpu
+    TCCR1B = (1<<WGM12) | (1<<CS12);
 
     // trial and error to determined this is as dim as we can go without flickering
     OCR1B = COLON_PWM;
@@ -215,9 +215,11 @@ void toggle_display()
         current_display = &timer;
     } else if (current_display == &timer) {
         current_display = 0;
-        OCR1B = 0;
+        TCCR1B &= ~(1<<CS12);
+        PORTB &= ~(1<<PB2);
     } else {
         current_display = &clock;
+        TCCR1B |= (1<<CS12);
         OCR1B = COLON_PWM;
     }
 }
